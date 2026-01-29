@@ -1,0 +1,19 @@
+{
+  "lastOpenedPath": "",
+  "windowBounds": {
+    "width": 1936,
+    "height": 1048
+  },
+  "panelSizes": {
+    "left": 280,
+    "right": 500
+  },
+  "terminalConfig": {
+    "fontFamily": "'JetBrains Mono', monospace",
+    "fontSize": 24,
+    "cursorStyle": "bar",
+    "cursorBlink": true,
+    "opacity": 100,
+    "colorScheme": "cockpit"
+  }
+}

@@ -1,0 +1,28 @@
+appId: com.claude.orchestrator
+productName: Claude Orchestrator
+directories:
+  buildResources: build
+  output: release
+files:
+  - dist
+  - dist-electron
+  - "!node_modules/**/*"
+  - node_modules/node-pty/**/*
+win:
+  target:
+    - target: portable
+      arch:
+        - x64
+  artifactName: ${productName}-${version}-portable.${ext}
+  signAndEditExecutable: false
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}
+extraResources:
+  - from: config
+    to: config
+    filter:
+      - "**/*"
+asar: true
+asarUnpack:
+  - "**/*.node"
+  - "**/node-pty/**"

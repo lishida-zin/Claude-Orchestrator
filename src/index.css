@@ -1,0 +1,87 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* カスタムスタイル */
+:root {
+  --cockpit-bg: #0a0e14;
+  --cockpit-panel: #111820;
+  --cockpit-border: #1e2a38;
+  --cockpit-accent: #00d9ff;
+  --cockpit-accent-dim: #007a8f;
+  --cockpit-success: #00ff88;
+  --cockpit-warning: #ffaa00;
+  --cockpit-error: #ff4466;
+  --cockpit-text: #e6edf3;
+  --cockpit-text-dim: #8b949e;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
+  background-color: var(--cockpit-bg);
+  color: var(--cockpit-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* スクロールバー */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--cockpit-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--cockpit-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--cockpit-accent-dim);
+}
+
+/* ドラッグ領域 */
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* リサイズハンドル */
+.resize-handle {
+  position: relative;
+}
+
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: -4px;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+/* xterm.js スタイル調整 */
+.xterm {
+  padding: 8px;
+}
+
+.xterm-viewport {
+  background-color: var(--cockpit-panel) !important;
+}
