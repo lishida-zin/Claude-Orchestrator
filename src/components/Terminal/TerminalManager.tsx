@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-import { useAppStore } from '../../stores/appStore'
+import { useAppStore, TerminalRole } from '../../stores/appStore'
 import TerminalSettings, { TerminalConfig, defaultTerminalConfig, colorSchemes } from './TerminalSettings'
 import '@xterm/xterm/css/xterm.css'
 
@@ -11,13 +11,26 @@ interface Shell {
   path: string
 }
 
-const Terminal = () => {
+// ロールごとの色設定
+const roleColors: Record<TerminalRole, { bg: string; border: string; icon: string }> = {
+  pm: { bg: 'bg-blue-900/30', border: 'border-blue-500', icon: '👔' },
+  worker: { bg: 'bg-green-900/30', border: 'border-green-500', icon: '⚙️' },
+  general: { bg: 'bg-cockpit-panel', border: 'border-cockpit-border', icon: '💻' }
+}
+
+const TerminalManager = () => {
   const {
     currentPath,
     terminals,
+    activeTerminal,
     addTerminal,
     removeTerminal,
-    setActiveTerminal
+    setActiveTerminal,
+    updateTerminalStatus,
+    updateTerminalClaudeActive,
+    updateTerminalPtyReady,
+    addConversationLog,
+    autoLaunchClaude
   } = useAppStore()
 
   const [shells, setShells] = useState<Shell[]>([])
@@ -28,7 +41,7 @@ const Terminal = () => {
 
   const terminalRefs = useRef<Map<string, { term: XTerm; fitAddon: FitAddon; shellId: string }>>(new Map())
   const containerRefs = useRef<Map<string, HTMLDivElement>>(new Map())
-  const pendingShells = useRef<Map<string, string>>(new Map())
+  const pendingShells = useRef<Map<string, { shellId: string; role: TerminalRole }>>(new Map())
 
   const [shellsLoaded, setShellsLoaded] = useState(false)
 
@@ -167,21 +180,61 @@ const Terminal = () => {
     try {
       await window.electronAPI.pty.create(id, currentPath || '', shellId)
 
+      const terminal = terminals.find(t => t.id === id)
+
       const removeDataListener = window.electronAPI.pty.onData(id, (data) => {
         term.write(data)
+
+        // 会話ログに追加
+        if (terminal) {
+          addConversationLog({
+            terminalId: id,
+            terminalTitle: terminal.title,
+            type: 'output',
+            content: data
+          })
+        }
+
+        // claude関連の出力を検知
+        if (data.includes('claude') || data.includes('Claude')) {
+          updateTerminalClaudeActive(id, true)
+        }
       })
 
       const removeExitListener = window.electronAPI.pty.onExit(id, () => {
+        updateTerminalStatus(id, 'completed')
+        updateTerminalClaudeActive(id, false)
         removeTerminal(id)
       })
 
       term.onData((data) => {
         window.electronAPI.pty.write(id, data)
+
+        // 入力ログに追加
+        if (terminal) {
+          addConversationLog({
+            terminalId: id,
+            terminalTitle: terminal.title,
+            type: 'input',
+            content: data
+          })
+        }
       })
 
       term.onResize(({ cols, rows }) => {
         window.electronAPI.pty.resize(id, cols, rows)
       })
+
+      updateTerminalStatus(id, 'running')
+      updateTerminalPtyReady(id, true)
+
+      // PM/Workerロールの場合、claudeを自動起動
+      if (autoLaunchClaude && terminal && (terminal.role === 'pm' || terminal.role === 'worker')) {
+        setTimeout(() => {
+          window.electronAPI.pty.write(id, 'claude\r')
+          updateTerminalClaudeActive(id, true)
+        }, 500)
+      }
 
       const cleanup = () => {
         removeDataListener()
@@ -195,10 +248,11 @@ const Terminal = () => {
     } catch (error) {
       console.error('Failed to create PTY:', error)
       term.writeln('\x1b[31mターミナルの初期化に失敗しました\x1b[0m')
+      updateTerminalStatus(id, 'error')
     }
-  }, [currentPath, removeTerminal, terminalConfig])
+  }, [currentPath, terminals, removeTerminal, terminalConfig, updateTerminalStatus, updateTerminalClaudeActive, addConversationLog])
 
-  // リサイズオブザーバー - すべてのターミナルをフィット
+  // リサイズオブザーバー
   useEffect(() => {
     const resizeObserver = new ResizeObserver(() => {
       terminalRefs.current.forEach((ref) => {
@@ -216,14 +270,15 @@ const Terminal = () => {
     }
   }, [terminals])
 
-  // ターミナル数が変わったらすべてリサイズ
+  // ターミナル数が変わったらリサイズ
   useEffect(() => {
     setTimeout(() => {
-      terminalRefs.current.forEach((ref) => {
-        ref.fitAddon.fit()
-      })
+      const activeRef = activeTerminal ? terminalRefs.current.get(activeTerminal) : null
+      if (activeRef) {
+        activeRef.fitAddon.fit()
+      }
     }, 100)
-  }, [terminals.length])
+  }, [terminals.length, activeTerminal])
 
   // クリーンアップ
   useEffect(() => {
@@ -237,12 +292,13 @@ const Terminal = () => {
   }, [])
 
   // 新しいターミナルを追加
-  const handleAddTerminal = (shellId?: string) => {
+  const handleAddTerminal = (shellId?: string, role: TerminalRole = 'general') => {
     const id = `terminal-${Date.now()}`
     const shell = shells.find(s => s.id === (shellId || selectedShell))
-    const title = shell ? shell.name : `Terminal ${terminals.length + 1}`
-    addTerminal(id, title)
-    pendingShells.current.set(id, shellId || selectedShell)
+    const roleLabel = role === 'pm' ? 'PM' : role === 'worker' ? 'Worker' : ''
+    const title = roleLabel ? `${roleLabel}: ${shell?.name || 'Terminal'}` : (shell?.name || `Terminal ${terminals.length + 1}`)
+    addTerminal(id, title, role)
+    pendingShells.current.set(id, { shellId: shellId || selectedShell, role })
     setShowShellMenu(false)
   }
 
@@ -258,10 +314,13 @@ const Terminal = () => {
   // ターミナルにフォーカス
   const handleFocusTerminal = (id: string) => {
     setActiveTerminal(id)
-    const ref = terminalRefs.current.get(id)
-    if (ref) {
-      ref.term.focus()
-    }
+    setTimeout(() => {
+      const ref = terminalRefs.current.get(id)
+      if (ref) {
+        ref.term.focus()
+        ref.fitAddon.fit()
+      }
+    }, 50)
   }
 
   // 透明度スタイル
@@ -271,16 +330,69 @@ const Terminal = () => {
 
   return (
     <div className="h-full flex flex-col">
-      {/* ヘッダー */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-cockpit-border bg-cockpit-bg">
-        <span className="text-xs font-semibold text-cockpit-text-dim uppercase tracking-wider">
-          Terminal
-        </span>
-        <div className="flex items-center gap-1 relative">
+      {/* ヘッダー: タブバー */}
+      <div className="flex items-center bg-cockpit-bg border-b border-cockpit-border">
+        {/* タブ */}
+        <div className="flex-1 flex items-center overflow-x-auto">
+          {terminals.map((terminal) => {
+            const isActive = terminal.id === activeTerminal
+            const colors = roleColors[terminal.role]
+
+            return (
+              <div
+                key={terminal.id}
+                className={`
+                  flex items-center gap-2 px-3 py-2 cursor-pointer border-r border-cockpit-border
+                  transition-colors min-w-[120px] max-w-[200px]
+                  ${isActive ? `${colors.bg} border-b-2 ${colors.border}` : 'hover:bg-cockpit-panel'}
+                `}
+                onClick={() => handleFocusTerminal(terminal.id)}
+              >
+                {/* ロールアイコン */}
+                <span className="text-sm">{colors.icon}</span>
+
+                {/* タイトル */}
+                <span className={`text-xs truncate flex-1 ${isActive ? 'text-cockpit-text' : 'text-cockpit-text-dim'}`}>
+                  {terminal.title}
+                </span>
+
+                {/* ステータスインジケータ */}
+                <div className={`w-2 h-2 rounded-full ${
+                  terminal.status === 'running' ? 'bg-green-500 animate-pulse' :
+                  terminal.status === 'error' ? 'bg-red-500' :
+                  terminal.status === 'completed' ? 'bg-gray-500' :
+                  'bg-yellow-500'
+                }`} />
+
+                {/* Claude アクティブ */}
+                {terminal.claudeActive && (
+                  <span className="text-xs text-purple-400" title="Claude起動中">🤖</span>
+                )}
+
+                {/* 閉じるボタン */}
+                <button
+                  className="p-0.5 hover:bg-cockpit-border rounded opacity-60 hover:opacity-100"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleCloseTerminal(terminal.id)
+                  }}
+                  title="閉じる"
+                >
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M4.646 4.646a.5.5 0 01.708 0L8 7.293l2.646-2.647a.5.5 0 01.708.708L8.707 8l2.647 2.646a.5.5 0 01-.708.708L8 8.707l-2.646 2.647a.5.5 0 01-.708-.708L7.293 8 4.646 5.354a.5.5 0 010-.708z" />
+                  </svg>
+                </button>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* 右側ボタン群 */}
+        <div className="flex items-center gap-1 px-2 relative">
           {/* 設定ボタン */}
           <button
             onClick={() => setShowSettings(true)}
-            className="p-1 hover:bg-cockpit-border rounded transition-colors"
+            className="p-1.5 hover:bg-cockpit-border rounded transition-colors"
             title="ターミナル設定"
           >
             <svg className="w-4 h-4 text-cockpit-text-dim" fill="currentColor" viewBox="0 0 16 16">
@@ -290,103 +402,97 @@ const Terminal = () => {
           </button>
 
           {/* シェル選択ドロップダウン */}
-          <button
-            onClick={() => setShowShellMenu(!showShellMenu)}
-            className="flex items-center gap-1 px-2 py-1 text-xs text-cockpit-text-dim hover:bg-cockpit-border rounded transition-colors"
-            title="シェルを選択して追加"
-          >
-            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 16 16">
-              <path d="M6 9a.5.5 0 01.5-.5h3a.5.5 0 010 1h-3A.5.5 0 016 9zM3.854 4.146a.5.5 0 10-.708.708L4.793 6.5 3.146 8.146a.5.5 0 10.708.708l2-2a.5.5 0 000-.708l-2-2z" />
-            </svg>
-            <span>{shells.find(s => s.id === selectedShell)?.name || 'Shell'}</span>
-            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 16 16">
-              <path d="M4.646 6.646a.5.5 0 01.708 0L8 9.293l2.646-2.647a.5.5 0 01.708.708l-3 3a.5.5 0 01-.708 0l-3-3a.5.5 0 010-.708z" />
-            </svg>
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setShowShellMenu(!showShellMenu)}
+              className="flex items-center gap-1 px-2 py-1.5 text-xs text-cockpit-text-dim hover:bg-cockpit-border rounded transition-colors"
+              title="新しいターミナルを追加"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M8 4a.5.5 0 01.5.5v3h3a.5.5 0 010 1h-3v3a.5.5 0 01-1 0v-3h-3a.5.5 0 010-1h3v-3A.5.5 0 018 4z" />
+              </svg>
+            </button>
 
-          {/* ドロップダウンメニュー */}
-          {showShellMenu && (
-            <div className="absolute top-full right-0 mt-1 bg-cockpit-panel border border-cockpit-border rounded shadow-lg z-50 min-w-[150px]">
-              {shells.map((shell) => (
-                <button
-                  key={shell.id}
-                  onClick={() => handleAddTerminal(shell.id)}
-                  className="w-full px-3 py-2 text-left text-sm text-cockpit-text hover:bg-cockpit-border transition-colors flex items-center gap-2"
-                >
-                  <svg className="w-4 h-4 text-cockpit-accent" fill="currentColor" viewBox="0 0 16 16">
-                    <path d="M6 9a.5.5 0 01.5-.5h3a.5.5 0 010 1h-3A.5.5 0 016 9zM3.854 4.146a.5.5 0 10-.708.708L4.793 6.5 3.146 8.146a.5.5 0 10.708.708l2-2a.5.5 0 000-.708l-2-2z" />
-                    <path d="M2 1a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V3a2 2 0 00-2-2H2zm12 1a1 1 0 011 1v10a1 1 0 01-1 1H2a1 1 0 01-1-1V3a1 1 0 011-1h12z" />
-                  </svg>
-                  {shell.name}
-                </button>
-              ))}
-            </div>
-          )}
+            {/* ドロップダウンメニュー */}
+            {showShellMenu && (
+              <div className="absolute top-full right-0 mt-1 bg-cockpit-panel border border-cockpit-border rounded shadow-lg z-50 min-w-[180px]">
+                <div className="px-2 py-1 text-xs text-cockpit-text-dim border-b border-cockpit-border">
+                  PM (マネージャー)
+                </div>
+                {shells.map((shell) => (
+                  <button
+                    key={`pm-${shell.id}`}
+                    onClick={() => handleAddTerminal(shell.id, 'pm')}
+                    className="w-full px-3 py-2 text-left text-sm text-cockpit-text hover:bg-cockpit-border transition-colors flex items-center gap-2"
+                  >
+                    <span>👔</span>
+                    {shell.name}
+                  </button>
+                ))}
 
-          {/* 分割追加ボタン */}
-          <button
-            onClick={() => handleAddTerminal()}
-            className="p-1 hover:bg-cockpit-border rounded transition-colors"
-            title="ペインを追加"
-          >
-            <svg className="w-4 h-4 text-cockpit-text-dim" fill="currentColor" viewBox="0 0 16 16">
-              <path d="M0 3a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H2a2 2 0 01-2-2V3zm8.5-1H14a1 1 0 011 1v10a1 1 0 01-1 1H8.5V2zm-1 0H2a1 1 0 00-1 1v10a1 1 0 001 1h5.5V2z" />
-            </svg>
-          </button>
+                <div className="px-2 py-1 text-xs text-cockpit-text-dim border-b border-t border-cockpit-border mt-1">
+                  Worker (作業員)
+                </div>
+                {shells.map((shell) => (
+                  <button
+                    key={`worker-${shell.id}`}
+                    onClick={() => handleAddTerminal(shell.id, 'worker')}
+                    className="w-full px-3 py-2 text-left text-sm text-cockpit-text hover:bg-cockpit-border transition-colors flex items-center gap-2"
+                  >
+                    <span>⚙️</span>
+                    {shell.name}
+                  </button>
+                ))}
+
+                <div className="px-2 py-1 text-xs text-cockpit-text-dim border-b border-t border-cockpit-border mt-1">
+                  General (汎用)
+                </div>
+                {shells.map((shell) => (
+                  <button
+                    key={`general-${shell.id}`}
+                    onClick={() => handleAddTerminal(shell.id, 'general')}
+                    className="w-full px-3 py-2 text-left text-sm text-cockpit-text hover:bg-cockpit-border transition-colors flex items-center gap-2"
+                  >
+                    <span>💻</span>
+                    {shell.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* ターミナルコンテナ - 分割表示 */}
-      <div id="terminal-container" className="flex-1 flex overflow-hidden" style={containerStyle}>
-        {terminals.map((terminal, index) => (
+      {/* メニュー外クリックで閉じる */}
+      {showShellMenu && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setShowShellMenu(false)}
+        />
+      )}
+
+      {/* ターミナルコンテナ */}
+      <div id="terminal-container" className="flex-1 overflow-hidden" style={containerStyle}>
+        {terminals.map((terminal) => (
           <div
             key={terminal.id}
-            className={`flex flex-col min-w-0 ${index > 0 ? 'border-l border-cockpit-border' : ''}`}
-            style={{ flex: 1 }}
-            onClick={() => handleFocusTerminal(terminal.id)}
-          >
-            {/* ペインヘッダー */}
-            <div className="flex items-center justify-between px-2 py-1 bg-cockpit-panel border-b border-cockpit-border">
-              <div className="flex items-center gap-1 text-xs text-cockpit-text-dim">
-                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 16 16">
-                  <path d="M6 9a.5.5 0 01.5-.5h3a.5.5 0 010 1h-3A.5.5 0 016 9zM3.854 4.146a.5.5 0 10-.708.708L4.793 6.5 3.146 8.146a.5.5 0 10.708.708l2-2a.5.5 0 000-.708l-2-2z" />
-                </svg>
-                <span>{terminal.title}</span>
-              </div>
-              {terminals.length > 1 && (
-                <button
-                  className="p-0.5 hover:bg-cockpit-border rounded"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleCloseTerminal(terminal.id)
-                  }}
-                  title="ペインを閉じる"
-                >
-                  <svg className="w-3 h-3 text-cockpit-text-dim" fill="currentColor" viewBox="0 0 16 16">
-                    <path d="M4.646 4.646a.5.5 0 01.708 0L8 7.293l2.646-2.647a.5.5 0 01.708.708L8.707 8l2.647 2.646a.5.5 0 01-.708.708L8 8.707l-2.646 2.647a.5.5 0 01-.708-.708L7.293 8 4.646 5.354a.5.5 0 010-.708z" />
-                  </svg>
-                </button>
-              )}
-            </div>
-            {/* ターミナル本体 */}
-            <div
-              ref={(el) => {
-                if (el && shellsLoaded) {
-                  containerRefs.current.set(terminal.id, el)
-                  if (!terminalRefs.current.has(terminal.id)) {
-                    const shellId = pendingShells.current.get(terminal.id) || selectedShell
-                    initTerminal(terminal.id, el, shellId)
-                    pendingShells.current.delete(terminal.id)
-                  }
+            className={`h-full ${terminal.id === activeTerminal ? 'block' : 'hidden'}`}
+            ref={(el) => {
+              if (el && shellsLoaded) {
+                containerRefs.current.set(terminal.id, el)
+                if (!terminalRefs.current.has(terminal.id)) {
+                  const pending = pendingShells.current.get(terminal.id)
+                  const shellId = pending?.shellId || selectedShell
+                  initTerminal(terminal.id, el, shellId)
+                  pendingShells.current.delete(terminal.id)
                 }
-              }}
-              className="flex-1 min-h-0"
-            />
-          </div>
+              }
+            }}
+          />
         ))}
 
         {terminals.length === 0 && (
-          <div className="flex-1 flex items-center justify-center text-cockpit-text-dim">
+          <div className="h-full flex items-center justify-center text-cockpit-text-dim">
             <div className="text-center">
               <svg className="w-16 h-16 mx-auto mb-4 opacity-30" fill="currentColor" viewBox="0 0 16 16">
                 <path d="M6 9a.5.5 0 01.5-.5h3a.5.5 0 010 1h-3A.5.5 0 016 9zM3.854 4.146a.5.5 0 10-.708.708L4.793 6.5 3.146 8.146a.5.5 0 10.708.708l2-2a.5.5 0 000-.708l-2-2z" />
@@ -394,10 +500,16 @@ const Terminal = () => {
               </svg>
               <p className="text-sm mb-4">ターミナルがありません</p>
               <button
-                onClick={() => handleAddTerminal()}
-                className="px-4 py-2 bg-cockpit-accent text-cockpit-bg text-sm font-medium rounded hover:bg-cockpit-accent-dim transition-colors"
+                onClick={() => handleAddTerminal(undefined, 'pm')}
+                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 transition-colors mr-2"
               >
-                新しいターミナル
+                👔 PM ターミナル
+              </button>
+              <button
+                onClick={() => handleAddTerminal(undefined, 'worker')}
+                className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded hover:bg-green-700 transition-colors"
+              >
+                ⚙️ Worker ターミナル
               </button>
             </div>
           </div>
@@ -416,4 +528,4 @@ const Terminal = () => {
   )
 }
 
-export default Terminal
+export default TerminalManager

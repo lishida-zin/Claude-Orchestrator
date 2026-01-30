@@ -25,6 +25,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     write: (id, data) => ipcRenderer.send('pty:write', id, data),
     resize: (id, cols, rows) => ipcRenderer.send('pty:resize', id, cols, rows),
     kill: (id) => ipcRenderer.send('pty:kill', id),
+    killAll: () => ipcRenderer.invoke('pty:killAll'),
+    sendCommand: (id, command) => ipcRenderer.send('pty:sendCommand', id, command),
+    getActiveCount: () => ipcRenderer.invoke('pty:getActiveCount'),
     onData: (id, callback) => {
       const handler = (_event, data) => callback(data);
       ipcRenderer.on(`pty:data:${id}`, handler);
@@ -37,9 +40,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
   },
 
+  // 会話履歴操作
+  conversation: {
+    save: (projectName, content) => ipcRenderer.invoke('conversation:save', projectName, content),
+    load: (projectName, date) => ipcRenderer.invoke('conversation:load', projectName, date),
+    list: (projectName) => ipcRenderer.invoke('conversation:list', projectName)
+  },
+
   // 設定操作
   settings: {
     load: () => ipcRenderer.invoke('settings:load'),
     save: (settings) => ipcRenderer.invoke('settings:save', settings)
+  },
+
+  // コマンド設定操作
+  commands: {
+    load: () => ipcRenderer.invoke('commands:load'),
+    save: (data) => ipcRenderer.invoke('commands:save', data)
   }
 });

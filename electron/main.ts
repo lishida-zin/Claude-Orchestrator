@@ -328,6 +328,41 @@ ipcMain.on('pty:kill', (_event, id: string) => {
   }
 })
 
+// IPC: 全PTYプロセス一括終了（緊急停止）
+ipcMain.handle('pty:killAll', async () => {
+  const count = ptyProcesses.size
+  log('INFO', `Emergency stop: killing ${count} PTY processes`)
+
+  ptyProcesses.forEach((ptyProcess, id) => {
+    try {
+      ptyProcess.kill()
+      log('INFO', `PTY process killed: ${id}`)
+    } catch (error) {
+      log('ERROR', `Failed to kill PTY process ${id}: ${error}`)
+    }
+  })
+  ptyProcesses.clear()
+
+  return count
+})
+
+// IPC: ターミナルにコマンド送信
+ipcMain.on('pty:sendCommand', (_event, id: string, command: string) => {
+  const ptyProcess = ptyProcesses.get(id)
+  if (ptyProcess) {
+    // コマンドを送信（改行付き）
+    ptyProcess.write(command + '\r')
+    log('INFO', `Command sent to ${id}: ${command}`)
+  } else {
+    log('ERROR', `PTY process not found: ${id}`)
+  }
+})
+
+// IPC: アクティブなPTYプロセス数を取得
+ipcMain.handle('pty:getActiveCount', async () => {
+  return ptyProcesses.size
+})
+
 // IPC: 設定操作
 ipcMain.handle('settings:load', async () => {
   return loadSettings()
@@ -336,4 +371,114 @@ ipcMain.handle('settings:load', async () => {
 ipcMain.handle('settings:save', async (_event, settings: Record<string, unknown>) => {
   saveSettings(settings)
   return true
+})
+
+// 会話履歴ディレクトリパス取得
+const getConversationPath = (projectName: string) => {
+  const appPath = app.isPackaged
+    ? path.dirname(app.getPath('exe'))
+    : process.cwd()
+  // プロジェクト名をサニタイズ（ファイルシステムセーフな名前に）
+  const safeName = projectName.replace(/[<>:"/\\|?*]/g, '_').substring(0, 50)
+  return path.join(appPath, 'logs', 'conversations', safeName)
+}
+
+// IPC: 会話履歴を保存
+ipcMain.handle('conversation:save', async (_event, projectName: string, content: string) => {
+  const conversationDir = getConversationPath(projectName)
+  const now = new Date()
+  const dateStr = now.toISOString().split('T')[0]
+  const filePath = path.join(conversationDir, `${dateStr}.md`)
+
+  try {
+    if (!fs.existsSync(conversationDir)) {
+      fs.mkdirSync(conversationDir, { recursive: true })
+    }
+
+    // 既存ファイルに追記
+    fs.appendFileSync(filePath, content, 'utf-8')
+    log('INFO', `Conversation saved: ${filePath}`)
+    return filePath
+  } catch (error) {
+    log('ERROR', `Failed to save conversation: ${error}`)
+    throw error
+  }
+})
+
+// IPC: 会話履歴を読み込み
+ipcMain.handle('conversation:load', async (_event, projectName: string, date: string) => {
+  const conversationDir = getConversationPath(projectName)
+  const filePath = path.join(conversationDir, `${date}.md`)
+
+  try {
+    if (fs.existsSync(filePath)) {
+      return fs.readFileSync(filePath, 'utf-8')
+    }
+    return null
+  } catch (error) {
+    log('ERROR', `Failed to load conversation: ${error}`)
+    throw error
+  }
+})
+
+// IPC: 会話履歴ファイル一覧を取得
+ipcMain.handle('conversation:list', async (_event, projectName: string) => {
+  const conversationDir = getConversationPath(projectName)
+
+  try {
+    if (!fs.existsSync(conversationDir)) {
+      return []
+    }
+
+    const files = fs.readdirSync(conversationDir)
+      .filter(f => f.endsWith('.md'))
+      .map(f => f.replace('.md', ''))
+      .sort()
+      .reverse()
+
+    return files
+  } catch (error) {
+    log('ERROR', `Failed to list conversations: ${error}`)
+    return []
+  }
+})
+
+// コマンド設定ファイルパス
+const getCommandsPath = () => {
+  const appPath = app.isPackaged
+    ? path.dirname(app.getPath('exe'))
+    : process.cwd()
+  return path.join(appPath, 'config', 'commands.json')
+}
+
+// IPC: コマンド設定を読み込み
+ipcMain.handle('commands:load', async () => {
+  const commandsPath = getCommandsPath()
+  try {
+    if (fs.existsSync(commandsPath)) {
+      const content = fs.readFileSync(commandsPath, 'utf-8')
+      return JSON.parse(content)
+    }
+    return null
+  } catch (error) {
+    log('ERROR', `Failed to load commands: ${error}`)
+    return null
+  }
+})
+
+// IPC: コマンド設定を保存
+ipcMain.handle('commands:save', async (_event, data: object) => {
+  const commandsPath = getCommandsPath()
+  const commandsDir = path.dirname(commandsPath)
+  try {
+    if (!fs.existsSync(commandsDir)) {
+      fs.mkdirSync(commandsDir, { recursive: true })
+    }
+    fs.writeFileSync(commandsPath, JSON.stringify(data, null, 2), 'utf-8')
+    log('INFO', 'Commands config saved')
+    return true
+  } catch (error) {
+    log('ERROR', `Failed to save commands: ${error}`)
+    return false
+  }
 })

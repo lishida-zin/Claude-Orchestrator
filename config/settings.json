@@ -1,5 +1,5 @@
 {
-  "lastOpenedPath": "",
+  "lastOpenedPath": "C:\\Users\\zinbe\\.claude\\dev\\Musubi",
   "windowBounds": {
     "width": 1936,
     "height": 1048
@@ -10,10 +10,16 @@
   },
   "terminalConfig": {
     "fontFamily": "'JetBrains Mono', monospace",
-    "fontSize": 24,
+    "fontSize": 20,
     "cursorStyle": "bar",
     "cursorBlink": true,
     "opacity": 100,
     "colorScheme": "cockpit"
-  }
+  },
+  "commandFavorites": [
+    {
+      "type": "command",
+      "id": "cost"
+    }
+  ]
 }

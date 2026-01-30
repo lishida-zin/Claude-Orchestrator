@@ -25,6 +25,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     write: (id: string, data: string) => ipcRenderer.send('pty:write', id, data),
     resize: (id: string, cols: number, rows: number) => ipcRenderer.send('pty:resize', id, cols, rows),
     kill: (id: string) => ipcRenderer.send('pty:kill', id),
+    killAll: () => ipcRenderer.invoke('pty:killAll'),
+    sendCommand: (id: string, command: string) => ipcRenderer.send('pty:sendCommand', id, command),
+    getActiveCount: () => ipcRenderer.invoke('pty:getActiveCount'),
     onData: (id: string, callback: (data: string) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: string) => callback(data)
       ipcRenderer.on(`pty:data:${id}`, handler)
@@ -35,6 +38,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on(`pty:exit:${id}`, handler)
       return () => ipcRenderer.removeListener(`pty:exit:${id}`, handler)
     }
+  },
+
+  // 会話履歴操作
+  conversation: {
+    save: (projectName: string, content: string) => ipcRenderer.invoke('conversation:save', projectName, content),
+    load: (projectName: string, date: string) => ipcRenderer.invoke('conversation:load', projectName, date),
+    list: (projectName: string) => ipcRenderer.invoke('conversation:list', projectName)
   },
 
   // 設定操作
@@ -64,8 +74,16 @@ export interface ElectronAPI {
     write: (id: string, data: string) => void
     resize: (id: string, cols: number, rows: number) => void
     kill: (id: string) => void
+    killAll: () => Promise<number>
+    sendCommand: (id: string, command: string) => void
+    getActiveCount: () => Promise<number>
     onData: (id: string, callback: (data: string) => void) => () => void
     onExit: (id: string, callback: (exitCode: number) => void) => () => void
+  }
+  conversation: {
+    save: (projectName: string, content: string) => Promise<string>
+    load: (projectName: string, date: string) => Promise<string | null>
+    list: (projectName: string) => Promise<string[]>
   }
   settings: {
     load: () => Promise<Record<string, unknown>>

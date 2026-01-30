@@ -79,7 +79,7 @@ Claude-Orchestrator/
 ### Settings
 - `settings:load`, `settings:save`
 
-## Phase 1 Status
+## Phase 1 Status ✅
 
 - [x] プロジェクト初期構成
 - [x] Monaco Editor 統合
@@ -90,3 +90,12 @@ Claude-Orchestrator/
 - [x] 設定ファイル管理
 - [x] 基本ログ機能
 - [x] electron-builder でポータブルビルド検証
+
+## Phase 2 Status ✅
+
+- [x] ターミナル動的追加（タブUI）
+- [x] PM/Worker/General ロール区別
+- [x] 緊急停止ボタン（Ctrl+Shift+Q）
+- [x] 自動セットアップ（claude起動）
+- [x] GUIコマンドパレット（/cost, /compact, /clear, /help）
+- [x] 会話履歴保存（マークダウン形式）
