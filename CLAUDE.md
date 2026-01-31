@@ -37,16 +37,30 @@ Claude-Orchestrator/
 │   ├── main.ts        # アプリエントリポイント、IPC、PTY管理
 │   └── preload.ts     # セキュアなAPI公開
 ├── src/
-│   ├── App.tsx        # メインReactコンポーネント
+│   ├── App.tsx        # メインReactコンポーネント（FlexLayout統合）
 │   ├── components/
 │   │   ├── Editor/    # Monaco Editor（コード編集）
 │   │   ├── Terminal/  # xterm.js + node-pty（ターミナル）
 │   │   ├── FileExplorer/ # カスタムファイルツリー
-│   │   └── Layout/    # タイトルバー、リサイズハンドル
+│   │   ├── Layout/    # TitleBar, MenuBar
+│   │   ├── CommandPalette/ # GUIコマンドパレット
+│   │   └── Toast/     # トースト通知
 │   ├── stores/        # Zustand グローバル状態
+│   │   ├── appStore.ts      # アプリ状態
+│   │   ├── layoutStore.ts   # レイアウト状態
+│   │   └── orchestrationStore.ts # オーケストレーション状態
+│   ├── hooks/         # カスタムフック
+│   │   └── useShortcuts.ts  # キーボードショートカット
+│   ├── styles/        # カスタムCSS
+│   │   └── flexlayout-cockpit.css # FlexLayoutテーマ
+│   ├── utils/         # ユーティリティ
+│   │   └── OutputParser.ts  # XMLタグパーサー
 │   └── types/         # TypeScript 型定義
-├── config/            # ポータブル設定（settings.json）
+├── config/            # ポータブル設定
+│   ├── settings.json  # アプリ設定・レイアウト
+│   └── shortcuts.json # ショートカット設定
 ├── logs/              # アプリログ、会話履歴
+├── dev-records/       # 開発記録
 └── docs/              # 要件定義書
 ```
 
@@ -57,6 +71,7 @@ Claude-Orchestrator/
 | electron | デスクトップアプリフレームワーク |
 | @monaco-editor/react | コードエディタ |
 | @xterm/xterm + node-pty | ターミナルエミュレータ |
+| flexlayout-react | ドッキング可能なレイアウトシステム |
 | zustand | 状態管理 |
 | tailwindcss | スタイリング |
 | vite + vite-plugin-electron | ビルドツール |
@@ -78,6 +93,9 @@ Claude-Orchestrator/
 
 ### Settings
 - `settings:load`, `settings:save`
+
+### Shortcuts
+- `shortcuts:load`, `shortcuts:save`
 
 ## Phase 1 Status ✅
 
@@ -127,3 +145,30 @@ Claude-Orchestrator/
 2. `RULEBOOK.md`
 3. `.claude/rules.md`
 4. `PROJECT_RULES.md`
+
+## Phase 4 Status ✅
+
+- [x] flexlayout-react によるドッキング可能なレイアウト
+- [x] ドラッグ&ドロップでパネル配置変更
+- [x] メニューバー（ファイル/表示/ターミナル）
+- [x] キーボードショートカットシステム
+- [x] レイアウト永続化（再起動時復元）
+- [x] カスタムCSSテーマ（cockpit-dark）
+
+### キーボードショートカット
+
+| ショートカット | 機能 |
+|---------------|------|
+| `Ctrl+B` | Explorer表示切替 |
+| `Ctrl+`` | Terminal表示切替 |
+| `Ctrl+Shift+P` | Command Palette表示切替 |
+| `Ctrl+Shift+R` | レイアウトリセット |
+| `Ctrl+S` | ファイル保存 |
+| `Ctrl+Shift+T` | 新規PMターミナル |
+| `Ctrl+Shift+W` | 新規Workerターミナル |
+| `Ctrl+Shift+Q` | 緊急停止 |
+
+### レイアウト設定
+
+- `config/shortcuts.json` - ショートカットカスタマイズ
+- `config/settings.json` の `layout` フィールド - レイアウト状態保存
