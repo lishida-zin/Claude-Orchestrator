@@ -1,7 +1,8 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, useEffect } from 'react'
 import MonacoEditor, { OnMount, loader } from '@monaco-editor/react'
 import * as monaco from 'monaco-editor'
 import { useAppStore } from '../../stores/appStore'
+import { useOrchestrationStore } from '../../stores/orchestrationStore'
 import type { editor } from 'monaco-editor'
 
 // ローカルのmonaco-editorを使用（CDN不要）
@@ -17,10 +18,31 @@ const Editor = () => {
     markFileClean
   } = useAppStore()
 
+  const { checkLock, releaseLock } = useOrchestrationStore()
+
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
+  const containerRef = useRef<HTMLDivElement | null>(null)
 
   // 現在のファイル
   const currentFile = openFiles.find((f) => f.path === activeFile)
+
+  // FlexLayout対応：コンテナリサイズ時にエディタを再レイアウト
+  useEffect(() => {
+    if (!containerRef.current) return
+
+    const resizeObserver = new ResizeObserver(() => {
+      if (editorRef.current) {
+        editorRef.current.layout()
+      }
+    })
+
+    resizeObserver.observe(containerRef.current)
+    if (containerRef.current.parentElement) {
+      resizeObserver.observe(containerRef.current.parentElement)
+    }
+
+    return () => resizeObserver.disconnect()
+  }, [])
 
   // エディタマウント時
   const handleEditorMount: OnMount = (editor) => {
@@ -88,40 +110,61 @@ const Editor = () => {
       {/* タブバー */}
       {openFiles.length > 0 && (
         <div className="flex items-center bg-cockpit-bg border-b border-cockpit-border overflow-x-auto">
-          {openFiles.map((file) => (
-            <div
-              key={file.path}
-              className={`
-                flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer border-r border-cockpit-border
-                ${file.path === activeFile
-                  ? 'bg-cockpit-panel text-cockpit-text'
-                  : 'text-cockpit-text-dim hover:bg-cockpit-panel'
-                }
-              `}
-              onClick={() => setActiveFile(file.path)}
-            >
-              <span className="whitespace-nowrap">
-                {file.isDirty && <span className="text-cockpit-accent mr-1">*</span>}
-                {getFileName(file.path)}
-              </span>
-              <button
-                className="p-0.5 hover:bg-cockpit-border rounded"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  closeFile(file.path)
-                }}
+          {openFiles.map((file) => {
+            const lock = checkLock(file.path)
+            const isLocked = lock !== null
+
+            return (
+              <div
+                key={file.path}
+                className={`
+                  flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer border-r border-cockpit-border
+                  ${file.path === activeFile
+                    ? 'bg-cockpit-panel text-cockpit-text'
+                    : 'text-cockpit-text-dim hover:bg-cockpit-panel'
+                  }
+                `}
+                onClick={() => setActiveFile(file.path)}
               >
-                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 16 16">
-                  <path d="M4.646 4.646a.5.5 0 01.708 0L8 7.293l2.646-2.647a.5.5 0 01.708.708L8.707 8l2.647 2.646a.5.5 0 01-.708.708L8 8.707l-2.646 2.647a.5.5 0 01-.708-.708L7.293 8 4.646 5.354a.5.5 0 010-.708z" />
-                </svg>
-              </button>
-            </div>
-          ))}
+                {/* ファイルロック警告アイコン */}
+                {isLocked && (
+                  <span
+                    className="text-yellow-500 cursor-help"
+                    title={`このファイルは ${lock.terminalTitle} が編集中です\nクリックでロック解除`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (confirm(`${lock.terminalTitle} のロックを解除しますか？`)) {
+                        releaseLock(file.path)
+                      }
+                    }}
+                  >
+                    🔒
+                  </span>
+                )}
+
+                <span className="whitespace-nowrap">
+                  {file.isDirty && <span className="text-cockpit-accent mr-1">*</span>}
+                  {getFileName(file.path)}
+                </span>
+                <button
+                  className="p-0.5 hover:bg-cockpit-border rounded"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    closeFile(file.path)
+                  }}
+                >
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M4.646 4.646a.5.5 0 01.708 0L8 7.293l2.646-2.647a.5.5 0 01.708.708L8.707 8l2.647 2.646a.5.5 0 01-.708.708L8 8.707l-2.646 2.647a.5.5 0 01-.708-.708L7.293 8 4.646 5.354a.5.5 0 010-.708z" />
+                  </svg>
+                </button>
+              </div>
+            )
+          })}
         </div>
       )}
 
       {/* エディタ本体 */}
-      <div className="flex-1">
+      <div className="flex-1" ref={containerRef}>
         {currentFile ? (
           <MonacoEditor
             height="100%"

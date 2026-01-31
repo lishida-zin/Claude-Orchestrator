@@ -482,3 +482,44 @@ ipcMain.handle('commands:save', async (_event, data: object) => {
     return false
   }
 })
+
+// ショートカット設定ファイルパス
+const getShortcutsPath = () => {
+  const appPath = app.isPackaged
+    ? path.dirname(app.getPath('exe'))
+    : process.cwd()
+  return path.join(appPath, 'config', 'shortcuts.json')
+}
+
+// IPC: ショートカット設定を読み込み
+ipcMain.handle('shortcuts:load', async () => {
+  const shortcutsPath = getShortcutsPath()
+  try {
+    if (fs.existsSync(shortcutsPath)) {
+      const content = fs.readFileSync(shortcutsPath, 'utf-8')
+      log('INFO', 'Shortcuts config loaded')
+      return JSON.parse(content)
+    }
+    return null
+  } catch (error) {
+    log('ERROR', `Failed to load shortcuts: ${error}`)
+    return null
+  }
+})
+
+// IPC: ショートカット設定を保存
+ipcMain.handle('shortcuts:save', async (_event, data: object) => {
+  const shortcutsPath = getShortcutsPath()
+  const shortcutsDir = path.dirname(shortcutsPath)
+  try {
+    if (!fs.existsSync(shortcutsDir)) {
+      fs.mkdirSync(shortcutsDir, { recursive: true })
+    }
+    fs.writeFileSync(shortcutsPath, JSON.stringify(data, null, 2), 'utf-8')
+    log('INFO', 'Shortcuts config saved')
+    return true
+  } catch (error) {
+    log('ERROR', `Failed to save shortcuts: ${error}`)
+    return false
+  }
+})

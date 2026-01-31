@@ -2,6 +2,8 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { useAppStore, TerminalRole } from '../../stores/appStore'
+import { useOrchestrationStore } from '../../stores/orchestrationStore'
+import { parseOutput, containsCommands, detectFilePaths, ParsedCommand } from '../../utils/OutputParser'
 import TerminalSettings, { TerminalConfig, defaultTerminalConfig, colorSchemes } from './TerminalSettings'
 import '@xterm/xterm/css/xterm.css'
 
@@ -33,6 +35,21 @@ const TerminalManager = () => {
     autoLaunchClaude
   } = useAppStore()
 
+  const {
+    addWorker,
+    updateWorkerStatus,
+    getWorkerByTerminalId,
+    getWorkerById,
+    checkLock,
+    acquireLock,
+    rulebookContent,
+    pmTerminalId,
+    setPmTerminalId,
+    addToast,
+    addWaiting,
+    removeWaiting
+  } = useOrchestrationStore()
+
   const [shells, setShells] = useState<Shell[]>([])
   const [selectedShell, setSelectedShell] = useState<string>('powershell')
   const [showShellMenu, setShowShellMenu] = useState(false)
@@ -42,6 +59,9 @@ const TerminalManager = () => {
   const terminalRefs = useRef<Map<string, { term: XTerm; fitAddon: FitAddon; shellId: string }>>(new Map())
   const containerRefs = useRef<Map<string, HTMLDivElement>>(new Map())
   const pendingShells = useRef<Map<string, { shellId: string; role: TerminalRole }>>(new Map())
+
+  // オーケストレーション用：出力バッファ（XMLタグが複数チャンクに分かれる場合対応）
+  const outputBuffers = useRef<Map<string, string>>(new Map())
 
   const [shellsLoaded, setShellsLoaded] = useState(false)
 
@@ -132,6 +152,134 @@ const TerminalManager = () => {
     loadShells()
   }, [])
 
+  // オーケストレーション：コマンド処理
+  const processOrchestrationCommands = useCallback(async (
+    commands: ParsedCommand[],
+    sourceTerminalId: string,
+    sourceRole: TerminalRole
+  ) => {
+    for (const cmd of commands) {
+      switch (cmd.type) {
+        case 'spawn_worker': {
+          // 新しいWorkerターミナルを自動生成
+          const newId = `terminal-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
+          const title = `Worker: ${cmd.role} (${cmd.id})`
+          addTerminal(newId, title, 'worker')
+          pendingShells.current.set(newId, { shellId: selectedShell, role: 'worker' })
+
+          // orchestrationStoreにWorker登録
+          addWorker({
+            id: cmd.id,
+            terminalId: newId,
+            role: cmd.role,
+            status: 'spawning'
+          })
+
+          addToast({
+            type: 'info',
+            title: `Worker生成: ${cmd.id}`,
+            message: `役割: ${cmd.role}`,
+            duration: 3000
+          })
+          break
+        }
+
+        case 'dispatch': {
+          // 対象Workerにコマンドを送信
+          const worker = getWorkerById(cmd.target)
+          if (worker) {
+            const targetRef = terminalRefs.current.get(worker.terminalId)
+            if (targetRef) {
+              // コマンドを送信
+              window.electronAPI.pty.write(worker.terminalId, cmd.command + '\r')
+              updateWorkerStatus(cmd.target, 'working')
+
+              addToast({
+                type: 'info',
+                title: `Dispatch: ${cmd.target}`,
+                message: cmd.command.substring(0, 50) + (cmd.command.length > 50 ? '...' : ''),
+                duration: 3000
+              })
+            }
+          } else {
+            addToast({
+              type: 'warning',
+              title: `Worker未発見: ${cmd.target}`,
+              message: 'dispatchの対象Workerが存在しません',
+              duration: 5000
+            })
+          }
+          break
+        }
+
+        case 'wait': {
+          // 待機リストに追加
+          addWaiting(cmd.target)
+          addToast({
+            type: 'info',
+            title: `Wait: ${cmd.target}`,
+            message: 'Workerの完了を待機中',
+            duration: 3000
+          })
+          break
+        }
+
+        case 'status': {
+          // Worker側からのステータス報告
+          if (sourceRole === 'worker') {
+            const worker = getWorkerByTerminalId(sourceTerminalId)
+            if (worker) {
+              const newStatus = cmd.status === 'COMPLETED' ? 'completed' : 'error'
+              updateWorkerStatus(worker.id, newStatus, cmd.message)
+
+              // PMターミナルにフィードバック送信
+              if (pmTerminalId) {
+                const pmRef = terminalRefs.current.get(pmTerminalId)
+                if (pmRef) {
+                  const feedbackMsg = cmd.status === 'COMPLETED'
+                    ? `\r\n[🔔 Worker ${worker.id}] COMPLETED\r\n`
+                    : `\r\n[🔔 Worker ${worker.id}] ERROR: ${cmd.message || 'Unknown error'}\r\n`
+                  pmRef.term.write(feedbackMsg)
+                }
+              }
+
+              // 待機リストから削除
+              removeWaiting(worker.id)
+
+              // トースト通知
+              addToast({
+                type: cmd.status === 'COMPLETED' ? 'success' : 'error',
+                title: `Worker ${worker.id}: ${cmd.status}`,
+                message: cmd.message,
+                duration: 5000
+              })
+            }
+          }
+          break
+        }
+      }
+    }
+  }, [selectedShell, addTerminal, addWorker, getWorkerById, getWorkerByTerminalId, updateWorkerStatus, pmTerminalId, addToast, addWaiting, removeWaiting])
+
+  // オーケストレーション：ファイルパスコンフリクト検出
+  const checkFileConflicts = useCallback((data: string, terminalId: string, terminalTitle: string) => {
+    const filePaths = detectFilePaths(data)
+    for (const filepath of filePaths) {
+      const existingLock = checkLock(filepath)
+      if (existingLock && existingLock.terminalId !== terminalId) {
+        addToast({
+          type: 'warning',
+          title: 'ファイルコンフリクト検出',
+          message: `${filepath} は ${existingLock.terminalTitle} が編集中です`,
+          duration: 5000
+        })
+      } else if (!existingLock) {
+        // ロックを取得
+        acquireLock(filepath, terminalId, terminalTitle)
+      }
+    }
+  }, [checkLock, acquireLock, addToast])
+
   // ターミナルを初期化
   const initTerminal = useCallback(async (id: string, container: HTMLDivElement, shellId: string) => {
     if (terminalRefs.current.has(id)) return
@@ -199,6 +347,42 @@ const TerminalManager = () => {
         if (data.includes('claude') || data.includes('Claude')) {
           updateTerminalClaudeActive(id, true)
         }
+
+        // === オーケストレーション処理 ===
+        if (terminal && (terminal.role === 'pm' || terminal.role === 'worker')) {
+          // 出力バッファに追加（XMLタグが複数チャンクに分かれる場合対応）
+          const currentBuffer = outputBuffers.current.get(id) || ''
+          const newBuffer = currentBuffer + data
+
+          // XMLコマンドが含まれているかチェック
+          if (containsCommands(newBuffer)) {
+            // コマンドを解析
+            const commands = parseOutput(newBuffer)
+            if (commands.length > 0) {
+              // コマンド処理実行
+              processOrchestrationCommands(commands, id, terminal.role)
+              // バッファをクリア（処理済み）
+              outputBuffers.current.set(id, '')
+            } else {
+              // 不完全なXMLタグの可能性があるのでバッファ保持（最大2KB）
+              if (newBuffer.length > 2048) {
+                outputBuffers.current.set(id, newBuffer.slice(-1024))
+              } else {
+                outputBuffers.current.set(id, newBuffer)
+              }
+            }
+          } else {
+            // XMLタグがなければバッファをリセット（最後の512文字だけ保持）
+            if (newBuffer.length > 512) {
+              outputBuffers.current.set(id, newBuffer.slice(-512))
+            } else {
+              outputBuffers.current.set(id, newBuffer)
+            }
+          }
+
+          // ファイルパスコンフリクト検出
+          checkFileConflicts(data, id, terminal.title)
+        }
       })
 
       const removeExitListener = window.electronAPI.pty.onExit(id, () => {
@@ -233,6 +417,19 @@ const TerminalManager = () => {
         setTimeout(() => {
           window.electronAPI.pty.write(id, 'claude\r')
           updateTerminalClaudeActive(id, true)
+
+          // PMターミナルIDを設定（最初のPM）
+          if (terminal.role === 'pm' && !pmTerminalId) {
+            setPmTerminalId(id)
+          }
+
+          // Rulebookが設定されている場合、Workerに送信
+          if (terminal.role === 'worker' && rulebookContent) {
+            setTimeout(() => {
+              const rulebookMsg = `\n以下のルールブックに従ってください:\n${rulebookContent}\n`
+              window.electronAPI.pty.write(id, rulebookMsg + '\r')
+            }, 2000) // claude起動後に送信
+          }
         }, 500)
       }
 
@@ -250,19 +447,29 @@ const TerminalManager = () => {
       term.writeln('\x1b[31mターミナルの初期化に失敗しました\x1b[0m')
       updateTerminalStatus(id, 'error')
     }
-  }, [currentPath, terminals, removeTerminal, terminalConfig, updateTerminalStatus, updateTerminalClaudeActive, addConversationLog])
+  }, [currentPath, terminals, removeTerminal, terminalConfig, updateTerminalStatus, updateTerminalClaudeActive, updateTerminalPtyReady, addConversationLog, autoLaunchClaude, pmTerminalId, setPmTerminalId, rulebookContent, processOrchestrationCommands, checkFileConflicts])
 
-  // リサイズオブザーバー
+  // リサイズオブザーバー（FlexLayout対応）
   useEffect(() => {
     const resizeObserver = new ResizeObserver(() => {
+      // FlexLayoutタブ切り替え時やリサイズ時に全ターミナルをfit
       terminalRefs.current.forEach((ref) => {
-        ref.fitAddon.fit()
+        try {
+          ref.fitAddon.fit()
+        } catch (e) {
+          // ターミナルがまだ初期化されていない場合は無視
+        }
       })
     })
 
+    // terminal-containerとその親（FlexLayoutのタブコンテナ）を監視
     const container = document.getElementById('terminal-container')
     if (container) {
       resizeObserver.observe(container)
+      // 親要素も監視してFlexLayoutのリサイズを検知
+      if (container.parentElement) {
+        resizeObserver.observe(container.parentElement)
+      }
     }
 
     return () => {
@@ -292,14 +499,21 @@ const TerminalManager = () => {
   }, [])
 
   // 新しいターミナルを追加
-  const handleAddTerminal = (shellId?: string, role: TerminalRole = 'general') => {
-    const id = `terminal-${Date.now()}`
+  const handleAddTerminal = (shellId?: string, role: TerminalRole = 'general', customTitle?: string): string => {
+    const id = `terminal-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
     const shell = shells.find(s => s.id === (shellId || selectedShell))
     const roleLabel = role === 'pm' ? 'PM' : role === 'worker' ? 'Worker' : ''
-    const title = roleLabel ? `${roleLabel}: ${shell?.name || 'Terminal'}` : (shell?.name || `Terminal ${terminals.length + 1}`)
+    const title = customTitle || (roleLabel ? `${roleLabel}: ${shell?.name || 'Terminal'}` : (shell?.name || `Terminal ${terminals.length + 1}`))
     addTerminal(id, title, role)
     pendingShells.current.set(id, { shellId: shellId || selectedShell, role })
     setShowShellMenu(false)
+
+    // PMターミナルが追加された場合、pmTerminalIdを設定
+    if (role === 'pm' && !pmTerminalId) {
+      setPmTerminalId(id)
+    }
+
+    return id
   }
 
   // ターミナルを閉じる

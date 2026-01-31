@@ -1,0 +1,11 @@
+{
+  "toggleExplorer": "Ctrl+B",
+  "toggleTerminal": "Ctrl+`",
+  "toggleCommandPalette": "Ctrl+Shift+P",
+  "resetLayout": "Ctrl+Shift+R",
+  "newFile": "Ctrl+N",
+  "saveFile": "Ctrl+S",
+  "newPMTerminal": "Ctrl+Shift+T",
+  "newWorkerTerminal": "Ctrl+Shift+W",
+  "emergencyStop": "Ctrl+Shift+Q"
+}

@@ -49,6 +49,10 @@ export interface ElectronAPI {
     load: () => Promise<CommandsConfig | null>
     save: (data: CommandsConfig) => Promise<boolean>
   }
+  shortcuts: {
+    load: () => Promise<Record<string, string> | null>
+    save: (shortcuts: Record<string, string>) => Promise<boolean>
+  }
 }
 
 export interface CommandConfig {

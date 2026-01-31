@@ -51,6 +51,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   settings: {
     load: () => ipcRenderer.invoke('settings:load'),
     save: (settings: Record<string, unknown>) => ipcRenderer.invoke('settings:save', settings)
+  },
+
+  // ショートカット設定操作
+  shortcuts: {
+    load: () => ipcRenderer.invoke('shortcuts:load'),
+    save: (shortcuts: Record<string, string>) => ipcRenderer.invoke('shortcuts:save', shortcuts)
   }
 })
 
@@ -88,6 +94,10 @@ export interface ElectronAPI {
   settings: {
     load: () => Promise<Record<string, unknown>>
     save: (settings: Record<string, unknown>) => Promise<boolean>
+  }
+  shortcuts: {
+    load: () => Promise<Record<string, string> | null>
+    save: (shortcuts: Record<string, string>) => Promise<boolean>
   }
 }
 

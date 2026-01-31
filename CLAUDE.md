@@ -99,3 +99,31 @@ Claude-Orchestrator/
 - [x] 自動セットアップ（claude起動）
 - [x] GUIコマンドパレット（/cost, /compact, /clear, /help）
 - [x] 会話履歴保存（マークダウン形式）
+
+## Phase 3 Status ✅
+
+- [x] Router機能（XMLタグ解析・Worker自動転送）
+- [x] Status Monitor（Worker完了/エラー検知→PMフィードバック）
+- [x] Rulebook Injection（プロジェクトルール自動読込）
+- [x] コンフリクト防止（同一ファイル編集警告）
+- [x] トースト通知システム
+
+### XMLタグ仕様
+
+```xml
+<!-- PM → Worker -->
+<spawn_worker id="worker1" role="frontend" />
+<dispatch target="worker1">指示内容</dispatch>
+<wait target="worker1" />
+
+<!-- Worker → PM -->
+<status>COMPLETED</status>
+<status>ERROR: エラー内容</status>
+```
+
+### Rulebook探索順序
+
+1. `CLAUDE.md`
+2. `RULEBOOK.md`
+3. `.claude/rules.md`
+4. `PROJECT_RULES.md`

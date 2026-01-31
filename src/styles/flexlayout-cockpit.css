@@ -1,0 +1,314 @@
+/* FlexLayout Cockpit Theme - Dark military-style theme */
+
+/* ===== Root Variables ===== */
+:root {
+  --flexlayout-border-color: #1e2936;
+  --flexlayout-bg: #0a0e14;
+  --flexlayout-panel-bg: #0f1419;
+  --flexlayout-tab-bg: #0a0e14;
+  --flexlayout-tab-selected-bg: #0f1419;
+  --flexlayout-tab-hover-bg: #1e2936;
+  --flexlayout-text: #c5d1de;
+  --flexlayout-text-dim: #6b7d8f;
+  --flexlayout-accent: #f29718;
+  --flexlayout-accent-hover: #ffb454;
+  --flexlayout-drag-rect: rgba(242, 151, 24, 0.3);
+  --flexlayout-drop-color: rgba(242, 151, 24, 0.5);
+}
+
+/* ===== Layout Container ===== */
+.flexlayout__layout {
+  background-color: var(--flexlayout-bg);
+  color: var(--flexlayout-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  font-size: 13px;
+}
+
+/* ===== Tab Strip (Tab Bar) ===== */
+.flexlayout__tabset_tabbar_outer {
+  background-color: var(--flexlayout-tab-bg);
+  border-bottom: 1px solid var(--flexlayout-border-color);
+}
+
+.flexlayout__tabset_tabbar_outer_top {
+  border-top: none;
+}
+
+.flexlayout__tabset_tabbar_inner {
+  display: flex;
+  align-items: center;
+}
+
+/* ===== Individual Tabs ===== */
+.flexlayout__tab_button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  margin: 2px 1px;
+  background-color: transparent;
+  border: none;
+  border-radius: 4px 4px 0 0;
+  color: var(--flexlayout-text-dim);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+  font-size: 12px;
+  min-width: 80px;
+}
+
+.flexlayout__tab_button:hover {
+  background-color: var(--flexlayout-tab-hover-bg);
+  color: var(--flexlayout-text);
+}
+
+.flexlayout__tab_button--selected {
+  background-color: var(--flexlayout-tab-selected-bg);
+  color: var(--flexlayout-text);
+  border-bottom: 2px solid var(--flexlayout-accent);
+}
+
+.flexlayout__tab_button_content {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ===== Tab Close Button ===== */
+.flexlayout__tab_button_trailing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  opacity: 0.5;
+  border-radius: 3px;
+  transition: opacity 0.15s, background-color 0.15s;
+}
+
+.flexlayout__tab_button_trailing:hover {
+  opacity: 1;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* ===== TabSet (Panel Container) ===== */
+.flexlayout__tabset {
+  background-color: var(--flexlayout-panel-bg);
+  border: 1px solid var(--flexlayout-border-color);
+  border-radius: 0;
+}
+
+.flexlayout__tabset_header {
+  display: none; /* We don't use header, only tabbar */
+}
+
+/* ===== Tab Content ===== */
+.flexlayout__tab {
+  background-color: var(--flexlayout-panel-bg);
+  overflow: hidden;
+}
+
+/* ===== Splitter (Resize Handle) ===== */
+.flexlayout__splitter {
+  background-color: var(--flexlayout-border-color);
+  transition: background-color 0.15s;
+}
+
+.flexlayout__splitter:hover {
+  background-color: var(--flexlayout-accent);
+}
+
+.flexlayout__splitter_drag {
+  background-color: var(--flexlayout-accent);
+}
+
+.flexlayout__splitter_vert {
+  width: 4px;
+  cursor: col-resize;
+}
+
+.flexlayout__splitter_horz {
+  height: 4px;
+  cursor: row-resize;
+}
+
+/* ===== Drag & Drop ===== */
+.flexlayout__drag_rect {
+  background-color: var(--flexlayout-drag-rect);
+  border: 2px dashed var(--flexlayout-accent);
+  border-radius: 4px;
+}
+
+.flexlayout__outline_rect {
+  border: 2px solid var(--flexlayout-accent);
+  background-color: var(--flexlayout-drop-color);
+  border-radius: 4px;
+}
+
+.flexlayout__outline_rect_edge {
+  border: 2px solid var(--flexlayout-accent);
+  background-color: var(--flexlayout-drop-color);
+}
+
+/* ===== Edge Indicators ===== */
+.flexlayout__edge_rect {
+  background-color: var(--flexlayout-drop-color);
+  border: 1px solid var(--flexlayout-accent);
+}
+
+/* ===== Floating Tabs ===== */
+.flexlayout__floating_window {
+  background-color: var(--flexlayout-panel-bg);
+  border: 1px solid var(--flexlayout-border-color);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.flexlayout__floating_window_content {
+  background-color: var(--flexlayout-panel-bg);
+}
+
+/* ===== Tab Overflow Menu ===== */
+.flexlayout__tab_toolbar_button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin: 2px;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s, background-color 0.15s;
+}
+
+.flexlayout__tab_toolbar_button:hover {
+  opacity: 1;
+  background-color: var(--flexlayout-tab-hover-bg);
+}
+
+.flexlayout__tab_toolbar_button-max {
+  fill: var(--flexlayout-text);
+}
+
+.flexlayout__tab_toolbar_button-min {
+  fill: var(--flexlayout-text);
+}
+
+.flexlayout__popup_menu {
+  background-color: var(--flexlayout-panel-bg);
+  border: 1px solid var(--flexlayout-border-color);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  padding: 4px 0;
+}
+
+.flexlayout__popup_menu_item {
+  padding: 8px 16px;
+  cursor: pointer;
+  color: var(--flexlayout-text);
+  transition: background-color 0.15s;
+}
+
+.flexlayout__popup_menu_item:hover {
+  background-color: var(--flexlayout-tab-hover-bg);
+}
+
+/* ===== Border Panels ===== */
+.flexlayout__border {
+  background-color: var(--flexlayout-tab-bg);
+  border-color: var(--flexlayout-border-color);
+}
+
+.flexlayout__border_button {
+  padding: 6px 10px;
+  background-color: transparent;
+  color: var(--flexlayout-text-dim);
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.flexlayout__border_button:hover {
+  background-color: var(--flexlayout-tab-hover-bg);
+  color: var(--flexlayout-text);
+}
+
+.flexlayout__border_button--selected {
+  background-color: var(--flexlayout-tab-selected-bg);
+  color: var(--flexlayout-accent);
+}
+
+/* ===== Custom Scrollbar ===== */
+.flexlayout__layout ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.flexlayout__layout ::-webkit-scrollbar-track {
+  background: var(--flexlayout-bg);
+}
+
+.flexlayout__layout ::-webkit-scrollbar-thumb {
+  background: var(--flexlayout-border-color);
+  border-radius: 4px;
+}
+
+.flexlayout__layout ::-webkit-scrollbar-thumb:hover {
+  background: var(--flexlayout-text-dim);
+}
+
+/* ===== Maximize Button ===== */
+.flexlayout__tabset_maximize_box {
+  padding: 2px;
+}
+
+.flexlayout__tabset-maximized {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+}
+
+/* ===== Error State ===== */
+.flexlayout__error_boundary_container {
+  background-color: var(--flexlayout-panel-bg);
+  color: #e06c75;
+  padding: 20px;
+  text-align: center;
+}
+
+/* ===== Custom Panel Styles ===== */
+.panel-explorer {
+  height: 100%;
+  overflow: auto;
+}
+
+.panel-editor {
+  height: 100%;
+  overflow: hidden;
+}
+
+.panel-terminal {
+  height: 100%;
+  overflow: hidden;
+}
+
+.panel-command-palette {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ===== Animation ===== */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.flexlayout__tab {
+  animation: fadeIn 0.15s ease-out;
+}
